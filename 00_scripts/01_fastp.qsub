@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#PBS -q omp
+#PBS -l walltime=02:00:00
+#PBS -J 1-58
+#PBS -l ncpus=17
+#PBS -l mem=40g
+#PBS -N 01_fastp
+
+
+#declare variables used in the script
+DATADIRECTORY=path/to/project
+DATAINPUT=Path/to/input/data
+DATAOUTPUT=path/to/output/data
+LOG=path/to/log
+FASTP=path/to/binaries/or/conda/environment
+ADAPTERFILE=path/to/adapter/file
+
+cd $DATAINPUT
+
+#Create the basename file for further analyses (adapt this line to every new dataset you get)
+sed 's/_1//g' $DATADIRECTORY/00_scripts/00_base_fastqc.txt | sed 's/_2//g' | uniq > $DATADIRECTORY/00_scripts/01_base_fastp.txt
+
+mkdir -p $DATAOUTPUT
+mkdir -p $LOG
+
+#Attribute a sample to an array variable
+NAME=$(cat $DATADIRECTORY/00_scripts/01_base_fastp.txt | awk "NR==${PBS_ARRAY_INDEX}")
+
+#save array table correspondance
+echo -e ${PBS_ARRAY_INDEX}"\t"${NAME} >> $DATADIRECTORY/00_scripts/01_fastp_array_table.txt
+
+#Load environment
+$FASTP
+
+cd $DATAINPUT
+
+#Execute the command line
+fastp -i ${NAME}_1.fastq.gz -I ${NAME}_2.fastq.gz -o $DATAOUTPUT/${NAME}_R1_paired.fastq.gz -O $DATAOUTPUT/${NAME}_R2_paired.fastq.gz --adapter_fasta $ADAPTERFILE --trim_poly_g --average_qual 28 --length_required 50 --thread 16 &> $LOG/fastp_${NAME}.log
+
+
