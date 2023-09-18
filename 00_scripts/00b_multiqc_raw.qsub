@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#PBS -q sequentiel
+#PBS -l walltime=04:00:00
+#PBS -l mem=5g
+#PBS -N 00b_multiQC_raw
+
+
+#Create environmental variables
+DATADIRECTORY=
+DATAINPUT=$DATADIRECTORY/03_QC/raw
+DATAOUTPUT=$DATADIRECTORY/03_QC/raw/multiQC
+MULTI=". /appli/bioinfo/multiqc/1.12/env.sh"
+LOG=$DATADIRECTORY/98_log/00_QC
+
+mkdir -p $DATAOUTPUT
+
+#Load environment
+$MULTI
+
+cd $DATAINPUT
+multiqc $DATAINPUT -o $DATAOUTPUT 2> $LOG/00b_multiQC.log
