@@ -13,7 +13,7 @@ GENOMEFASTA=$GENOMEFOLDER/GCF_020424385.1_ASM2042438v2_genomic.fna
 GFF3=$GENOMEFOLDER/GCF_020424385.1_ASM2042438v2_genomic.gff
 MODE=genomeGenerate
 
-STAR="Path/to/conda/env"
+STAR=path/to/binaries/or/conda
 
 #Genome Generation
 $STAR
