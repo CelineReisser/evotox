@@ -1,0 +1,623 @@
+---
+title: "Analysis of differential gene expression using DESeq2 for EVOTOX"
+author: "Celine Reisser"
+date: "2023-05-12"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+The script for this analysis should be placed in the same folder as the raw count table and the metadata file that will be used in this analysis. please set the working directory to the source file location (the folder of this script).
+
+
+Then, load the libraries we will need:
+
+```{r libraries,results='hide',message=FALSE}
+library(DESeq2)
+library(WGCNA)
+library(edgeR)
+library(ggplot2)
+library(plotly)
+library(vegan)
+library(cowplot)
+library(VennDiagram)
+library(pheatmap)
+```
+
+
+
+# Get the data into R
+
+
+We will need to import the raw count table we obtained from FeatureCounts, as well as the metadata of the samples in the study:
+
+
+```{r import data}
+
+# Get count matrix
+cts <- as.matrix(read.table(file="Evotox_raw_read_count_final.txt",
+                            header=T,row.names="Geneid"))
+
+#keep only the count data and the name of the transcripts as rowname
+cts<-cts[,6:ncol(cts)]
+
+#create a numeric matrix
+cts2<-matrix(as.numeric(cts),ncol=ncol(cts),nrow=nrow(cts),byrow=F)
+
+#Add rownames (we remove the cds- bit so that the names are the same as 
+#   in the protein file of the genome) and the colnames (name of individuals)
+rownames(cts2)<-substr(rownames(cts),5,nchar(rownames(cts)))
+colnames(cts2)<-colnames(cts)
+
+# Get metadata
+coldata<-read.table("Info_file.txt",header=T, row.names="FileName")
+coldata$Population<-factor(coldata$Population)
+coldata$Tissue<-factor(coldata$Tissue)
+coldata$Treatment<-factor(coldata$Treatment)
+
+#Organize the sample order in the count file according to the metadata sample 
+#  order (if not corresponding already):
+
+#Get the desired column order:
+neworder<-coldata$SampleName
+#reorganize columns:
+cts2<-cts2[,neworder]
+
+```
+
+
+
+# Sample and transcripts filtering:
+
+
+Now we get to the step where we need to make sure all samples are fitting for analysis (no outliers in term on read counts), and no outlier in term of expression profile (global view of what is hapenning). Also, we need to remove transcripts for which we have no or only a few reads across all samples, as they will add noise to the statistics.
+
+
+Let's first look at the sample sequencing depth:
+
+
+```{r sequencing depth}
+#Get the sum of all reads for each column (sample):
+sample_depth<-colSums(cts2)
+min(sample_depth) #10217689
+max(sample_depth) #25473372
+
+#Do a barplot:
+barplot(sample_depth)
+
+```
+
+
+We see that a few samples have around 10 million reads, but that the majority is between 15 and 25 million reads, which is good.
+
+
+Now let's look at the transcript counts across all samples (we will here only show the 6 first entries of the table, meaning the number of transcripts with 0, 1... up to 6 reads mapped to them):
+
+
+```{r transcript count}
+#Get the sum of all reads for each column (sample):
+trans_counts<-rowSums(cts2)
+head(table(trans_counts))
+
+```
+
+
+Here we see the 6 first entry of the table, and we see that 27394 genes did not have expression data mapped to them, 926 genes had only one read mapped to them etc etc...
+
+
+We need to filter those low expressed genes out. Here, we will discard any gene that has less than 3-4 reads (0.5cpm) within a group (population) and reads must be found in at least 2 of the 3 populations.
+
+
+```{r transcript filtering}
+##create object in order to filter the data:
+group<-coldata$Population #specifying population groupings of samples
+cds <- DGEList(counts=cts2,group=group) #create a table
+keep<-rowSums(cpm(cds)>0.5) >=2
+cds2<-cds[keep,,keep.lib.sizes=F]
+dim(cds2) 
+```
+
+We kept 11183 genes at the end of the filtering.
+
+
+Now let's look at the samples in a more "qualitative way", to see if RNA expression might be problematic for some samples (having an outlier at that step can be diagnostic of a contamination for example, meaning that the RNA sequenced for that individual might not be only from that individual, but from pathogens, or other microorganisms...)
+
+
+```{r sample RNA quality}
+#Make an experimental design matrix to get all the conditions tested:
+design<-model.matrix(~coldata$Tissue+coldata$Population+coldata$Treatment)
+
+#estimate dispersion for normalisation
+cds3<-estimateDisp(cds2,design)
+
+#Transform the data (normalize) to be used for clusterization research
+logcpm <- cpm(cds3, prior.count=2, log=TRUE)
+
+#transpose the dataset so it fits with the wgcna expectations
+datExpr0 = as.data.frame(t(logcpm))
+
+#check samples for excessive 0/missing values, but should 
+#  be ok since we filtered everything in the step before
+gsg = goodSamplesGenes(datExpr0, verbose = 3)
+gsg$allOK   #if returns true then all the genes pass that threshold
+
+# Clustering of samples based on overall expression pattern:
+sampleTree = hclust(dist(datExpr0), method = "average")
+plot(sampleTree, main = "Sample clustering to detect outliers",
+     sub="", xlab="", cex.lab = 1, cex.axis = 1, cex.main = 2,cex=0.6)
+
+```
+
+
+Here we see that the samples cluster well together according to tissue type, but we see in the GI tissu that one sample seems a bit outlier (C2_con_GI). We might want to remove it from analysis since it could lead to a reduced power of analysis for the GI specific samples. We will do it a bit further on, before the differential expression analysis.
+
+
+Now let's look at how the samples group with the variables we wanted to test (we already saw clearly they cluster according to tissue type, but maybe we have subclusters in there):
+
+
+```{r traits mapping to clusters}
+
+# Preparing the "trait" matrix to be added to the analysis
+
+datTraits<-cbind(coldata$Tissue,coldata$Population,coldata$Treatment)
+colnames(datTraits)<-c("Tissue","Population","Treatment")
+rownames(datTraits)<-rownames(coldata)
+
+traitColors = numbers2colors(datTraits, signed = TRUE)
+
+# Plot the sample dendrogram and the colors underneath.
+plotDendroAndColors(sampleTree, traitColors,groupLabels = colnames(datTraits),
+                    main = "Sample dendrogram and trait heatmap")
+
+```
+
+
+We can also see that with a PCA on the global gene expression:
+
+
+
+```{r pca global gene expression,message=F}
+
+dds <- DESeqDataSetFromMatrix(countData = cts2,
+                              colData = coldata,
+                              design = ~ Tissue + Population + Treatment)
+
+keep <- rowSums(counts(dds)) >= 10
+
+dds <- dds[keep,]
+dds$Treatment <- relevel(dds$Treatment, ref = "Control")
+
+# transform data
+vst<-vst(dds)
+data<-as.data.frame(assay(vst))
+
+#prepare matrix for rda (PCA in vegan package)
+data2<-t(data)
+
+#Do PCA
+pca<-rda(data2)
+
+pcaData<-summary(pca)
+pcaData<-as.data.frame(pcaData$sites)
+pcaData<-cbind(pcaData,coldata$Tissue,coldata$Population,coldata$Treatment)
+names(pcaData)<-c("PC1","PC2","PC3","PC4","PC5","PC6",
+                  "Tissue","Population","Treatment")
+
+
+#Plot data
+p1<-ggplot(data=pcaData,mapping=aes(x=PC1,y=PC2)) +
+  geom_point(aes(color=Population,shape=Tissue,size=Treatment)) +
+  scale_color_manual(values=c("red","blue","green")) + 
+  scale_shape_manual(values=c(1,2)) + 
+  scale_size_manual(values=c(2,4)) + xlab("PC1 (72,85%)") +
+  ylab("PC2 (3.9%)")
+p2<-ggplot(data=pcaData,mapping=aes(x=PC3,y=PC4)) +
+  scale_shape_manual(values=c(1,2)) + 
+  scale_size_manual(values=c(2,4)) +
+  geom_point(aes(color=Population,shape=Tissue,size=Treatment)) +
+  scale_color_manual(values=c("red","blue","green")) +
+  xlab("PC3 (1.9%)") + ylab("PC4 (1.4%)")
+
+plot_grid(p1, p2, labels = "AUTO")
+
+```
+
+
+Here we see that the control individual from Camargue (C2) really is problematic and is outside of all groupings... We need to remove it. Then, we see that the samples indeed cluster by tissue type. On PC3 and PC4, we somewhat see a population separation (at least for Camargue and Narbonne, and Salagou is in between).
+
+
+Removing problematic individuals:
+
+
+```{r removal of outlier individuals}
+
+cts3<-subset(cts2, select = -c(C2_con_MG))
+
+#also remove individual from the metadata matrix:
+coldata2<-subset(coldata, SampleName != "C2_con_MG")
+
+```
+
+
+Now we are ready to do the differential analysis:
+
+
+
+# Differential expression analysis using "automated correction" for population
+
+
+
+## DE analysis in the hepatopancreas
+
+
+```{r DEseq analysis according to Treatment and correcting for population in hepatopancreas,message=F}
+#Grab the sample names we want to keep
+hepato<-coldata2[coldata2$Tissue=="MG",]
+
+#Subset the matrix
+cts_hepato<-cts3[,colnames(cts3) %in% hepato$SampleName]
+
+dds_hepato<- DESeqDataSetFromMatrix(countData = cts_hepato,
+                                  colData = hepato,
+                                  design = ~ Population + Treatment)
+
+#Relevel the Treatment to set default to control samples
+dds_hepato$Treatment<- relevel(dds_hepato$Treatment,ref="Control")
+
+
+# Do the analysis
+dds_hepato <- DESeq(dds_hepato)
+res_hepato <- results(dds_hepato)
+
+#Replace Padj values of non estimated genes (NA) to 1
+res_hepato$padj[is.na(res_hepato$padj)] <- 1
+
+```
+
+
+Now we want to keep only the genes for which there is a significant differential expression according to treatment (so differentially expressed between the polluted versus control groups). Here we will set it at Padj<=0.05
+
+
+```{r Keep significant DE according to Treatment and correcting for population in hepatopancreas}
+#Keep only genes that have a corrected p-value < 0.05
+signif_hepato<-res_hepato[res_hepato$padj<0.05,]
+head(signif_hepato)
+
+#Save table
+write.table(signif_hepato,"./signif_hepato.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+
+```
+
+
+Here we see that for the hepatopancreas, we have 216 genes that are significantly differentially expressed between polluted and non polluted groups, taking into account the population of origin :)
+
+
+
+## DE analysis in the gills
+
+
+
+```{r DEseq analysis according to Treatment and correcting for population in gills, message=F}
+#Grab the sample names we want to keep
+gill<-coldata2[coldata2$Tissue=="Gills",]
+
+#Subset the matrix
+cts_gill<-cts3[,colnames(cts3) %in% gill$SampleName]
+
+dds_gill<- DESeqDataSetFromMatrix(countData = cts_gill,
+                                  colData = gill,
+                                  design = ~ Population + Treatment)
+
+#Relevel the Treatment to default control
+dds_gill$Treatment<- relevel(dds_gill$Treatment,ref="Control")
+
+
+# Do the analysis
+dds_gill <- DESeq(dds_gill)
+res_gill <- results(dds_gill)
+
+#Replace Padj values of non estimated genes (NA) to 1
+res_gill$padj[is.na(res_gill$padj)] <- 1
+
+```
+
+
+Now we want to keep only the genes for which there is a significant differential expression according to treatment (so differentially expressed between the polluted versus control groups). Here we will set it at Padj<=0.05
+
+
+```{r Keep significant DE according to Treatment and correcting for population in gills}
+#Keep only genes that have a corrected p-value >0.05
+signif_gill<-res_gill[res_gill$padj<0.05,]
+head(signif_gill)
+
+#Save table
+write.table(signif_gill,"./signif_gill.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+
+```
+
+
+Here we see that we have 14 genes that are significantly differentially expressed between polluted and non polluted groups, taking into account the population of origin :)
+
+
+
+# Differential expression analysis performed per population:
+
+
+
+## DE Analysis in the hepatopancreas, per population:
+
+
+
+```{r DEseq analysis according to Treatment per population in hepatopancreas, message=F}
+#Create the sample names we want to keep per population
+Cam<-coldata2[coldata2$Population=="Camargue",]
+Nar<-coldata2[coldata2$Population=="Narbonne",]
+Sal<-coldata2[coldata2$Population=="Salagou",]
+
+hepatoCam<-Cam[Cam$Tissue=="MG",]
+hepatoNar<-Nar[Nar$Tissue=="MG",]
+hepatoSal<-Sal[Sal$Tissue=="MG",]
+
+#Subset the matrix
+cts_hepatoCam<-cts3[,colnames(cts3) %in% hepatoCam$SampleName]
+cts_hepatoNar<-cts3[,colnames(cts3) %in% hepatoNar$SampleName]
+cts_hepatoSal<-cts3[,colnames(cts3) %in% hepatoSal$SampleName]
+
+#Create the DESeq objects
+dds_hepatoCam<- DESeqDataSetFromMatrix(countData = cts_hepatoCam,
+                                  colData = hepatoCam,
+                                  design = ~ Treatment)
+dds_hepatoNar<- DESeqDataSetFromMatrix(countData = cts_hepatoNar,
+                                  colData = hepatoNar,
+                                  design = ~ Treatment)
+dds_hepatoSal<- DESeqDataSetFromMatrix(countData = cts_hepatoSal,
+                                  colData = hepatoSal,
+                                  design = ~ Treatment)
+
+#Relevel the Treatment to default control
+dds_hepatoCam$Treatment<- relevel(dds_hepatoCam$Treatment,ref="Control")
+dds_hepatoNar$Treatment<- relevel(dds_hepatoNar$Treatment,ref="Control")
+dds_hepatoSal$Treatment<- relevel(dds_hepatoSal$Treatment,ref="Control")
+
+# Do the analysis
+dds_hepatoCam <- DESeq(dds_hepatoCam)
+dds_hepatoNar <- DESeq(dds_hepatoNar)
+dds_hepatoSal <- DESeq(dds_hepatoSal)
+
+res_hepatoCam <- results(dds_hepatoCam)
+res_hepatoNar <- results(dds_hepatoNar)
+res_hepatoSal <- results(dds_hepatoSal)
+
+#Replace Padj values of non estimated genes (NA) to 1
+res_hepatoCam$padj[is.na(res_hepatoCam$padj)] <- 1
+res_hepatoNar$padj[is.na(res_hepatoNar$padj)] <- 1
+res_hepatoSal$padj[is.na(res_hepatoSal$padj)] <- 1
+
+```
+
+
+Now we keep only the significants:
+
+
+```{r Keep significant DE according to Treatment per population in hepatopancreas}
+#Keep only genes that have a corrected p-value >0.05
+
+signif_hepatoCam<-res_hepatoCam[res_hepatoCam$padj<0.05,]
+signif_hepatoNar<-res_hepatoNar[res_hepatoNar$padj<0.05,]
+signif_hepatoSal<-res_hepatoSal[res_hepatoSal$padj<0.05,]
+
+head(signif_hepatoCam)
+head(signif_hepatoNar)
+head(signif_hepatoSal)
+
+#Save tables
+write.table(signif_hepatoCam,"./signif_hepatoCam.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+write.table(signif_hepatoNar,"./signif_hepatoNar.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+write.table(signif_hepatoSal,"./signif_hepatoSal.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+
+```
+
+
+For Camargue, we have 88 DE genes in the hepatopancreas
+For Narbonne, we have 6 DE genes in the hepatopancreas
+For Salagou, we have 7 DE genes in the hepatopancreas
+
+Let's see if those genes are in common (maybe the small number of genes in the Narbonne and Salagou populations is linked to a lack of power...)
+
+
+```{r Venn diagram of common hepatopancreas DE genes per population in hepatopancreas}
+
+#Create the lists to be compared
+ca<-rownames(signif_hepatoCam)
+na<-rownames(signif_hepatoNar)
+sa<-rownames(signif_hepatoSal)
+
+venn.diagram(
+  x = list(ca,na,sa),
+  category.names = c("Camargue" , "Narbonne" , "Salagou"),
+  filename = 'Venn_diagram_hepato_per_pop.png',
+  output=TRUE
+)
+
+```
+
+
+There are no genes in common between the populations when doing like that (see PNG output).
+
+
+
+## DE Analysis in the gills, per population:
+
+
+
+For this analysis, Narbonne does not have samples for all conditions, so it was removed from the analysis
+
+```{r DEseq analysis according to Treatment per population in gills, message=F}
+#Create the sample names we want to keep per population
+Cam<-coldata2[coldata2$Population=="Camargue",]
+Sal<-coldata2[coldata2$Population=="Salagou",]
+
+gillCam<-Cam[Cam$Tissue=="Gills",]
+gillSal<-Sal[Sal$Tissue=="Gills",]
+
+#Subset the matrix
+cts_gillCam<-cts3[,colnames(cts3) %in% gillCam$SampleName]
+cts_gillSal<-cts3[,colnames(cts3) %in% gillSal$SampleName]
+
+#Create the DESeq objects
+dds_gillCam<- DESeqDataSetFromMatrix(countData = cts_gillCam,
+                                  colData = gillCam,
+                                  design = ~ Treatment)
+dds_gillSal<- DESeqDataSetFromMatrix(countData = cts_gillSal,
+                                  colData = gillSal,
+                                  design = ~ Treatment)
+
+#Relevel the Treatment to default control
+dds_gillCam$Treatment<- relevel(dds_gillCam$Treatment,ref="Control")
+dds_gillSal$Treatment<- relevel(dds_gillSal$Treatment,ref="Control")
+
+# Do the analysis
+dds_gillCam <- DESeq(dds_gillCam)
+dds_gillSal <- DESeq(dds_gillSal)
+
+res_gillCam <- results(dds_gillCam)
+res_gillSal <- results(dds_gillSal)
+
+#Replace Padj values of non estimated genes (NA) to 1
+res_gillCam$padj[is.na(res_gillCam$padj)] <- 1
+res_gillSal$padj[is.na(res_gillSal$padj)] <- 1
+
+```
+
+
+```{r Keep significant DE according to Treatment per population in gills}
+#Keep only genes that have a corrected p-value >0.05
+signif_gillCam<-res_gillCam[res_gillCam$padj<0.05,]
+signif_gillSal<-res_gillSal[res_gillSal$padj<0.05,]
+
+head(signif_gillCam)
+head(signif_gillSal)
+
+write.table(signif_gillCam,"./signif_gillCam.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+write.table(signif_gillSal,"./signif_gillSal.txt",quote=F,
+            col.names=T,row.names=T,sep="\t")
+
+```
+
+
+
+There are 30 genes DE in gills in Camargue population
+There are 41 genes DE in gills in Salagou population
+
+
+
+```{r Venn diagram of common hepatopancreas DE genes per population in gills}
+
+#Create the lists to be compared
+ca2<-rownames(signif_gillCam)
+sa2<-rownames(signif_gillSal)
+
+venn.diagram(
+  x = list(ca2,sa2),
+  category.names = c("Camargue" , "Salagou"),
+  filename = 'Venn_diagram_gill_per_pop.png',
+  output=TRUE
+)
+
+```
+
+Here too, there is still not any genes in common between the populations...
+
+
+
+# Heatmaps for the genes that are DE in the analyses
+
+
+## The DE analysis correctiong for population of origin:
+
+
+```{r grab normalized counts}
+
+#Create the normalized table for the hepatopancreas
+
+counts_hepato<-counts(dds_hepato)
+scaled_counts_hepato<-vst(counts_hepato)
+select_hepato <- scaled_counts_hepato[rownames(scaled_counts_hepato) 
+                                      %in% rownames(signif_hepato),]
+df_hepato <- as.data.frame(colData(dds_hepato)[,"Treatment"])
+rownames(df_hepato)<-colnames(counts_hepato)
+colnames(df_hepato)<-"Treatment"
+pheatmap(select_hepato, annotation = df_hepato,show_rownames = F,
+         main="Polluted vs Control DE genes in the hepatopancreas")
+
+
+
+#Create the normalized table for the gill
+
+counts_gill<-counts(dds_gill)
+scaled_counts_gill<-vst(counts_gill)
+select_gill <- scaled_counts_gill[rownames(scaled_counts_gill) 
+                                  %in% rownames(signif_gill),]
+df_gill <- as.data.frame(colData(dds_gill)[,"Treatment"])
+rownames(df_gill)<-colnames(counts_gill)
+colnames(df_gill)<-"Treatment"
+pheatmap(select_gill, annotation = df_gill,show_rownames = F,
+         main="Polluted vs Control DE genes in the gill")
+
+
+
+```
+
+
+
+We see that for the hepatopancreas, it's not a perfect separation of polluted versus control but it is pretty good. As we did the analysis globally and correcting for pop of origin.
+We could add to the stringency of the selection of genes, reducing even further the P-value, or selecting only genes with a certain logFC.
+
+For the gill though, it is perfect separation.
+
+You can copy that code and adapt it to see the heatmaps for each population...
+
+
+
+# Expression of particular genes of interest
+
+
+
+Code to grab the expression pattern of a given gene of interest:
+
+```{r expression of particular gene}
+#Plot the counts of a particular gene of interest
+d <- plotCounts(dds_hepato, gene="XP_045611368.1", 
+                intgroup="Treatment", returnData=TRUE)
+
+#Doing it as a scatterplot
+ggplot(data=d,aes(x=Treatment,y=count)) +
+  geom_point() + 
+  scale_y_continuous(trans='log10') +
+  ylab(bquote(log[10](counts))) + 
+  ggtitle("Expression of XP_045611368.1") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Doing it as a boxplot
+ggplot(data=d,aes(x=Treatment,y=count)) + 
+  geom_boxplot() + 
+  scale_y_continuous(trans='log10') + 
+  ylab(bquote(log[10](counts))) + 
+  ggtitle("Expression of XP_045611368.1") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
