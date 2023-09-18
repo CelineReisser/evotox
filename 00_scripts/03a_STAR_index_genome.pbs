@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#PBS -q omp
+#PBS -l ncpus=4
+#PBS -l mem=60gb
+#PBS -l walltime=24:00:00
+#PBS -N 03a_star_index
+
+# For genome
+DATADIRECTORY=
+OUTDIR=
+GENOMEFOLDER=$OUTDIR/evotox/01_info_files
+GENOMEFASTA=$GENOMEFOLDER/GCF_020424385.1_ASM2042438v2_genomic.fna
+GFF3=$GENOMEFOLDER/GCF_020424385.1_ASM2042438v2_genomic.gff
+MODE=genomeGenerate
+
+STAR="Path/to/conda/env"
+
+#Genome Generation
+$STAR
+
+STAR --runThreadN 4 --runMode $MODE --genomeDir $GENOMEFOLDER --genomeFastaFiles $GENOMEFASTA 
+
+conda deactivate
