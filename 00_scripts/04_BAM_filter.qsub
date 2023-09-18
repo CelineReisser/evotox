@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#PBS -q omp
+#PBS -l ncpus=21
+#PBS -l mem=60gb
+#PBS -l walltime=24:00:00
+#PBS -J 1-58
+#PBS -N 04_BAM_filter
+
+DATADIRECTORY=
+OUT=
+OUTDIR=$OUT/evotox/04_mapped
+
+mkdir -p $OUTDIR
+
+# Assign array nb to file
+NAME=$(cat $DATADIRECTORY/00_scripts/01_base_fastp.txt | awk "NR==${PBS_ARRAY_INDEX}")
+
+#save array table correspondance
+echo -e ${PBS_ARRAY_INDEX}"\t"${NAME} >> $DATADIRECTORY/00_scripts/04_BAM_filtering_array.txt
+
+
+SAMBAMBA=Path/to/conda/bin
+$SAMBAMBA
+
+cd $SCRATCH/evotox/04_mapped
+
+sambamba view -S -t 20 -f bam -h ${NAME}_Aligned.out.sam -o ${NAME}_Aligned.out.bam
+
+#keep only read with good mapping quality (over 30)
+sambamba view -f bam -F "mapping_quality >= 30" -t 20 -h ${NAME}_Aligned.out.bam -o ${NAME}_Aligned.out.filtered.bam
+
+#sort the file according to coordinates on genome
+sambamba sort --tmpdir=$SCRATCH ${NAME}_Aligned.out.filtered.bam -o ${NAME}_Aligned.out.filtered.sorted.bam
+rm ${NAME}_Aligned.out.filtered.bam
+
+#create index:
+sambamba index ${NAME}_Aligned.out.filtered.sorted.bam
+
+conda deactivate
+
