@@ -10,7 +10,7 @@ DATADIRECTORY=
 OUTDIR=
 DATAINPUT=$OUTDIR/evotox/03_trimmed
 DATAOUTPUT=$DATADIRECTORY/03_QC/trimmed
-FASTQCENV=". /appli/bioinfo/fastqc/0.11.9/env.sh"
+FASTQCENV=path/to/binaries/or/conda
 LOG=$DATADIRECTORY/98_log/02_QC_trimmed
 
 
