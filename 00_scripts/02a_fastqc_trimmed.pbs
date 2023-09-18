@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#PBS -q sequentiel
+#PBS -l mem=20gb
+#PBS -l walltime=04:00:00
+#PBS -J 1-116
+#PBS -N 02a_fastqc_trimmed
+
+#declare variables used in the script
+DATADIRECTORY=
+OUTDIR=
+DATAINPUT=$OUTDIR/evotox/03_trimmed
+DATAOUTPUT=$DATADIRECTORY/03_QC/trimmed
+FASTQCENV=". /appli/bioinfo/fastqc/0.11.9/env.sh"
+LOG=$DATADIRECTORY/98_log/02_QC_trimmed
+
+
+mkdir -p $DATAOUTPUT
+mkdir -p $LOG
+
+cd $DATAINPUT
+basename -s _paired.fastq.gz *_paired.fastq.gz > $DATADIRECTORY/00_scripts/02_base_fastqc_trimmed.txt
+
+NAME=$(cat $DATADIRECTORY/00_scripts/02_base_fastqc_trimmed.txt | awk "NR==${PBS_ARRAY_INDEX}")
+
+#save array table correspondance
+echo -e ${PBS_ARRAY_INDEX}"\t"${NAME} >> $DATADIRECTORY/00_scripts/02a_fastqc_trimmed_array_table.txt
+
+$FASTQCENV
+cd $DATAINPUT
+
+fastqc ${NAME}_paired.fastq.gz -o $DATAOUTPUT 2> $LOG/fastqc_trimmed_${NAME}.log
+
+conda deactivate
