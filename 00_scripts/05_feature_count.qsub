@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+#PBS -q sequentiel
+#PBS -l mem=60g
+#PBS -l walltime=24:00:00
+#PBS -N 05_featurecounts
+
+OUT=
+INPUT=$SOUT/evotox/04_mapped
+DATADIRECTORY=
+OUTPUT=$DATADIRECTORY/05_read_count
+GTF=$OUT/evotox/01_info_files/GCF_020424385.1_ASM2042438v2_genomic.gff
+
+mkdir -p $OUTPUT
+
+BAM1=C10_con_GI_Aligned.out.filtered.sorted.bam
+BAM2=C1_con_MG_Aligned.out.filtered.sorted.bam
+BAM3=C1_poll_GI_Aligned.out.filtered.sorted.bam
+BAM4=C1_poll_MG_Aligned.out.filtered.sorted.bam
+BAM5=C2_con_GI_Aligned.out.filtered.sorted.bam
+BAM6=C2_con_MG_Aligned.out.filtered.sorted.bam
+BAM7=C2_poll_MG_Aligned.out.filtered.sorted.bam
+BAM8=C3_con_MG_Aligned.out.filtered.sorted.bam
+BAM9=C3_poll_MG_Aligned.out.filtered.sorted.bam
+BAM10=C4_con_MG_Aligned.out.filtered.sorted.bam
+BAM11=C4_poll_MG_Aligned.out.filtered.sorted.bam
+BAM12=C6_con_MG_Aligned.out.filtered.sorted.bam
+BAM13=C6_poll_GI_Aligned.out.filtered.sorted.bam
+BAM14=C6_poll_MG_Aligned.out.filtered.sorted.bam
+BAM15=C7_con_GI_Aligned.out.filtered.sorted.bam
+BAM16=C7_con_MG_Aligned.out.filtered.sorted.bam
+BAM17=C7_poll_GI_Aligned.out.filtered.sorted.bam
+BAM18=C7_poll_MG_Aligned.out.filtered.sorted.bam
+BAM19=C8_con_MG_Aligned.out.filtered.sorted.bam
+BAM20=C9_con_GI_Aligned.out.filtered.sorted.bam
+BAM21=C9_con_MG_Aligned.out.filtered.sorted.bam
+BAM22=C9_poll_MG_Aligned.out.filtered.sorted.bam
+BAM23=N1_con_MG_Aligned.out.filtered.sorted.bam
+BAM24=N1_poll_MG_Aligned.out.filtered.sorted.bam
+BAM25=N2_poll_MG_Aligned.out.filtered.sorted.bam
+BAM26=N3_con_MG_Aligned.out.filtered.sorted.bam
+BAM27=N4_con_MG_Aligned.out.filtered.sorted.bam
+BAM28=N4_poll_MG_Aligned.out.filtered.sorted.bam
+BAM29=N5_con_MG_Aligned.out.filtered.sorted.bam
+BAM30=N5_poll_MG_Aligned.out.filtered.sorted.bam
+BAM31=N6_con_GI_Aligned.out.filtered.sorted.bam
+BAM32=N6_con_MG_Aligned.out.filtered.sorted.bam
+BAM33=N6_poll_MG_Aligned.out.filtered.sorted.bam
+BAM34=N7_con_MG_Aligned.out.filtered.sorted.bam
+BAM35=N7_poll_GI_Aligned.out.filtered.sorted.bam
+BAM36=N7_poll_MG_Aligned.out.filtered.sorted.bam
+BAM37=N8_con_MG_Aligned.out.filtered.sorted.bam
+BAM38=N8_poll_MG_Aligned.out.filtered.sorted.bam
+BAM39=N9_poll_MG_Aligned.out.filtered.sorted.bam
+BAM40=S11_con_GI_Aligned.out.filtered.sorted.bam
+BAM41=S1_poll_MG_Aligned.out.filtered.sorted.bam
+BAM42=S2_poll_GI_Aligned.out.filtered.sorted.bam
+BAM43=S2_poll_MG_Aligned.out.filtered.sorted.bam
+BAM44=S3_con_MG_Aligned.out.filtered.sorted.bam
+BAM45=S3_poll_MG_Aligned.out.filtered.sorted.bam
+BAM46=S4_con_mg_Aligned.out.filtered.sorted.bam
+BAM47=S4_poll_MG_Aligned.out.filtered.sorted.bam
+BAM48=S5_con_MG_Aligned.out.filtered.sorted.bam
+BAM49=S5_poll_MG_Aligned.out.filtered.sorted.bam
+BAM50=S6_con_GI_Aligned.out.filtered.sorted.bam
+BAM51=S6_con_MG_Aligned.out.filtered.sorted.bam
+BAM52=S6_poll_MG_Aligned.out.filtered.sorted.bam
+BAM53=S7_poll_GI_Aligned.out.filtered.sorted.bam
+BAM54=S7_poll_MG_Aligned.out.filtered.sorted.bam
+BAM55=S8_con_MG_Aligned.out.filtered.sorted.bam
+BAM56=S8_poll_GI_Aligned.out.filtered.sorted.bam
+BAM57=S8_poll_MG_Aligned.out.filtered.sorted.bam
+BAM58=S9_con_MG_Aligned.out.filtered.sorted.bam
+
+#Chargement de conda
+export PATH=$PATH:/xxxxxxxxxxx/anaconda/2.7/bin
+
+source activate featurecounts
+
+cd $INPUT
+
+featureCounts -p -a $GTF -g ID -t CDS -o $OUTPUT/Evotox_raw_read_count.txt $BAM1 $BAM2 $BAM3 $BAM4 $BAM5 $BAM6 $BAM7 $BAM8 $BAM9 $BAM10 $BAM11 $BAM12 $BAM13 $BAM14 $BAM15 $BAM16 $BAM17 $BAM18 $BAM19 $BAM20 $BAM21 $BAM22 $BAM23 $BAM24 $BAM25 $BAM26 $BAM27 $BAM28 $BAM29 $BAM30 $BAM31 $BAM32 $BAM33 $BAM34 $BAM35 $BAM36 $BAM37 $BAM38 $BAM39 $BAM40 $BAM41 $BAM42 $BAM43 $BAM44 $BAM45 $BAM46 $BAM47 $BAM48 $BAM49 $BAM50 $BAM51 $BAM52 $BAM53 $BAM54 $BAM55 $BAM56 $BAM57 $BAM58
+
+
+
+conda deactivate
+
