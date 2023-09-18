@@ -9,7 +9,7 @@
 DATADIRECTORY=
 DATAINPUT=$DATADIRECTORY/03_QC/trimmed
 DATAOUTPUT=$DATADIRECTORY/03_QC/trimmed/multiQC
-MULTI=". /appli/bioinfo/multiqc/1.12/env.sh"
+MULTI=path/to/binaries/or/conda
 LOG=$DATADIRECTORY/98_log/02_QC_trimmed
 
 
