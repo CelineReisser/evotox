@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#PBS -N nf-rnavar
+#PBS -q 
+#PBS -l ncpus=2
+#PBS -l mem=10gb
+#PBS -l walltime=120:00:00
+
+cd ${PBS_O_WORKDIR}
+
+
+export NXF_OFFLINE='TRUE'
+export NXF_SINGULARITY_CACHEDIR="$DATAWORK/nf_singularity_cachedir"
+
+samplesheet=evotox.csv
+outdir=$SCRATCH/evotox/RNAVAR
+star_index=$SCRATCH/evotox/01_info_files/
+fasta=$SCRATCHevotox/01_info_files/GCF_020424385.1_ASM2042438v2_genomic.fna
+gff3=$SCRATCH/evotox/01_info_files/GCF_020424385.1_ASM2042438v2_genomic.gff
+
+mkdir -p $outdir
+
+nextflow run workflow \
+             -profile singularity \
+             -c ifremer.config \
+             --input ${samplesheet} \
+             --fasta ${fasta} \
+             --gff ${gff3} \
+             --outdir ${outdir} \
+             --star_twopass \
+             --remove_duplicates \
+             --read_length 102 \
+             --skip_baserecalibration true \
+             --save_reference \
+             --skip_variantannotation >& ${PBS_JOBNAME}.e${PBS_JOBID%.*} 2>&1
+
+
