@@ -9,11 +9,14 @@
 conda activate bcftools
 
 DATADIRECTORY=$DATAWORK/evotox
-LIST=$DATADIRECTORY/00_scripts/vcf_merge_list.txt
 DATAOUTPUT=$SCRATCH/evotox/RNAVAR
 
 cd $DATAOUTPUT
-bcftools merge -0 -l vcf_merge_list.txt --threads 40 -o Evotox_SNPs.vcf.gz -O z
+
+mv ./results/variant_calling/*/*.vcf .
+ls *.vcf > $DATADIRECTORY/00_scripts/vcf_merge_list.txt
+
+bcftools merge -0 -l $DATADIRECTORY/00_scripts/vcf_merge_list.txt --threads 40 -o Evotox_SNPs.vcf.gz -O z
 
 bcftools filter Evotox_SNPs.vcf.gz -e 'MIN(FORMAT/DP)<10 & MAF[0]<0.05' -o Evotox_SNPs_filtered.vcf.gz -O z --threads 40
 
