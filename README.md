@@ -2,7 +2,7 @@
 Evolutionary toxicology by anthropogenic pollution of three red swamp crayfish (Procambarus clarkii) populations.
 
 
-This page presents the bioinformatics pipeline used to analyse samples of XXXXX gills and hepatopancreas.
+This page presents the bioinformatics pipeline used to analyse gills and hepatopancreas samples of 3 populations of Procambarus clarkii submitted to a pollution experiment.
 
 ## Bioinformatiic programs:
 
